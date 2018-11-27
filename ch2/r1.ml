@@ -33,4 +33,40 @@ e : [
 ];
      
 END
-     
+
+exception R1VarMissInEnv of string
+
+let empty_env () = []
+
+let rec apply_env str env =
+  match env with
+  | [] -> raise (R1VarMissInEnv str)
+  | (var_name, sub_name) :: tl ->
+     (if var_name = str
+      then sub_name
+      else apply_env str tl)
+
+let unique_id = ref 0
+
+let new_id str =
+  unique_id := (!unique_id + 1);
+  str ^ "." ^ (string_of_int !unique_id)
+              
+let extend_env str new_str env =
+  (str, new_str) :: env
+
+let rec uniquify exp env =
+  match exp with
+  | IntExp (num, loc) -> IntExp(num, loc)
+  | ReadExp loc -> ReadExp loc
+  | NegExp (exp, loc) -> NegExp ((uniquify exp env), loc)
+  | AddExp (exp1, exp2, loc) -> AddExp ((uniquify exp1 env), (uniquify exp2 env), loc)
+  | VarExp (str, loc) -> VarExp ((apply_env str env), loc)
+  | LetExp (str, exp1, body, loc) ->
+     let new_str = new_id str in
+     LetExp (new_str, (uniquify exp1 env), (uniquify body (extend_env str new_str env)), loc)
+
+let do_uniquify exp =
+  uniquify exp (empty_env ())
+
+    

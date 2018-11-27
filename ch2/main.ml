@@ -11,6 +11,8 @@ let string_of_loc loc =
 
                                                                                            
 let parse_output prog =
+  (match prog with
+   | AProgram (i, exp) -> do_uniquify exp);
   print_endline "parse succeed";
   ()
 

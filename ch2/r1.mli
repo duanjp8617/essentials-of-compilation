@@ -12,3 +12,4 @@ and expression =
   | LetExp of string * expression * expression * Ploc.t
 
 val parse : char Stream.t -> program
+val do_uniquify : expression -> expression
