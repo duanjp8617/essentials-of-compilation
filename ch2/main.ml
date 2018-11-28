@@ -12,7 +12,7 @@ let string_of_loc loc =
                                                                                            
 let parse_output prog =
   (match prog with
-   | AProgram (i, exp) -> do_uniquify exp);
+   | AProgram (i, exp) -> exp |> do_uniquify |> remove_complex |> string_of_exp |> print_endline);
   print_endline "parse succeed";
   ()
 

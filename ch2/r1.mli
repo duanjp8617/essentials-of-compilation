@@ -13,3 +13,5 @@ and expression =
 
 val parse : char Stream.t -> program
 val do_uniquify : expression -> expression
+val remove_complex : expression -> expression
+val string_of_exp : expression -> string
