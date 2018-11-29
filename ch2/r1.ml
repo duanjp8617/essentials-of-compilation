@@ -78,100 +78,65 @@ let int_or_var exp =
   | ReadExp _ -> true
   | _ -> false 
        
-let is_exp_simple exp =
+let rec is_exp_simple exp =
   match exp with
   | IntExp _ -> true
   | ReadExp _ -> true
   | NegExp (exp, _) -> int_or_var exp
   | AddExp (exp1, exp2, _) -> (int_or_var exp1) && (int_or_var exp2)
   | VarExp _ -> true
-  | LetExp (str, exp, body, _) -> false
+  | LetExp (str, exp, body, _) -> is_exp_simple exp && is_exp_simple body
 
-let rec remove_sub exp var_name body =
-  match exp with
-  | IntExp (num, loc) -> LetExp (var_name, IntExp (num, loc), body, loc)
-  | ReadExp loc -> LetExp (var_name, ReadExp loc, body, loc)
-  | NegExp (exp, loc) ->
-     if int_or_var exp
-     then LetExp (var_name, NegExp (exp, loc), body, loc)
-     else
-       let new_name = new_id "tmp" in
-       remove_sub exp new_name
-         (LetExp (var_name, NegExp (VarExp (new_name, loc), loc), body, loc))
-  | AddExp (exp1, exp2, loc) ->
-     (match (int_or_var exp1, int_or_var exp2) with
-      | (true, true) -> LetExp (var_name, AddExp (exp1, exp2, loc), body, loc)
-      | (true, false) ->
-         let new_name = new_id "tmp" in
-         remove_sub exp2 new_name
-           (LetExp (var_name, AddExp (exp1, VarExp (new_name, loc), loc), body, loc))
-      | (false, true) ->
-         let new_name = new_id "tmp" in
-         remove_sub exp1 new_name
-           (LetExp (var_name, AddExp (VarExp (new_name, loc), exp2, loc), body, loc))
-      | (false, false) ->
-         let new_name1 = new_id "tmp" in
-         let new_name2 = new_id "tmp" in
-         let new_body =
-           LetExp (
-               var_name,
-               AddExp (VarExp (new_name1, loc), VarExp (new_name2, loc), loc),
-               body,
-               loc) in
-         remove_sub exp1 new_name1 (remove_sub exp2 new_name2 new_body))
-  | VarExp (name, loc) ->
-     LetExp (var_name, VarExp (name, loc), body, loc)
-  | LetExp (let_name, let_exp, let_body, loc) ->
-     (match (is_exp_simple let_exp, is_exp_simple let_body) with
-      | (true, true) ->
-         let new_let_body = LetExp (var_name, let_body, body, loc) in
-         LetExp (let_name, let_exp, new_let_body, loc)
-      | (true, false) ->
-         LetExp (let_name, let_exp, (remove_sub let_body var_name body), loc)
-      | (false, true) ->
-         remove_sub let_exp let_name (LetExp (var_name, let_body, body, loc))
-      | (false, false) ->
-         remove_sub let_exp let_name (remove_sub let_body var_name body))
+let rec helper_filter exp_ls filtered_ls filter_fn =
+  match exp_ls with
+  | [] -> (List.rev filtered_ls, [])
+  | hd :: tl ->
+     match filter_fn hd with
+     | true -> helper_filter tl (hd :: filtered_ls) filter_fn
+     | false -> (List.rev filtered_ls, hd :: tl)
+              
+(* Given a list of expression and a simple expression builder,
+   this function returns a new expression that is simplified. *)
+let rec simple_exp_from_ls exp_ls builder =
+  let (all_simples, hd_not_simple) = helper_filter exp_ls [] int_or_var in
+  match hd_not_simple with
+  | [] -> builder all_simples
+  | hd :: tl ->
+     let new_name = new_id "tmp" in
+     let new_exp_ls = all_simples @ (VarExp (new_name, Ploc.dummy) :: tl) in 
+     simplify hd new_name (simple_exp_from_ls new_exp_ls builder)
 
-and remove_complex exp =
+(* Given an exp: expression, a let_name:String, a let_body: expression,
+   this function create a new let expression with the form
+   LetExp (let_name, let_exp, let_body). The let_exp will be a 
+   simplified expression created by exp. *)
+and simplify exp let_name let_body = 
   match exp with
-  | IntExp _ -> exp
-  | ReadExp _ -> exp
+  | IntExp (num, loc) -> LetExp (let_name, IntExp (num, loc), let_body, Ploc.dummy)
+  | ReadExp loc -> LetExp (let_name, ReadExp loc, let_body, Ploc.dummy)
   | NegExp (exp, loc) ->
-     if int_or_var exp
-     then NegExp (exp, loc)
-     else
-       let new_name = new_id "tmp" in
-       remove_sub exp new_name (NegExp (VarExp (new_name, loc), loc))
+     simple_exp_from_ls [exp] (fun simple_ls ->
+         LetExp (let_name, NegExp (List.hd simple_ls, loc), let_body, Ploc.dummy))
   | AddExp (exp1, exp2, loc) ->
-     (match (int_or_var exp1, int_or_var exp2) with
-      | (true, true) -> AddExp (exp1, exp2, loc)
-      | (true, false) ->
-         let new_name = new_id "tmp" in
-         remove_sub exp2 new_name (AddExp (exp1, VarExp (new_name, loc), loc))
-      | (false, true) ->
-         let new_name = new_id "tmp" in
-         remove_sub exp1 new_name (AddExp (VarExp (new_name, loc), exp2, loc))
-      | (false, false) ->
-         let new_name1 = new_id "tmp" in
-         let new_name2 = new_id "tmp" in
-         let new_body =
-           AddExp (VarExp (new_name1, loc), VarExp (new_name2, loc), loc)
-         in
-         remove_sub exp1 new_name1 (remove_sub exp2 new_name2 new_body))
-  | VarExp (name, loc) ->
-     VarExp (name, loc)
-  | LetExp (let_name, let_exp, let_body, loc) ->
-     (match (is_exp_simple let_exp, is_exp_simple let_body) with
-      | (true, true) ->        
-         LetExp (let_name, let_exp, let_body, loc)
-      | (true, false) ->
-         LetExp (let_name, let_exp, (remove_complex let_body), loc)
-      | (false, true) ->
-         remove_sub let_exp let_name let_body
-      | (false, false) ->
-         remove_sub let_exp let_name (remove_complex exp))
-     
+     simple_exp_from_ls (exp1 :: [exp2])
+       (fun simple_ls ->
+         LetExp (let_name,
+                 AddExp (List.nth simple_ls 0, List.nth simple_ls 1, loc),
+                 let_body,
+                 Ploc.dummy))
+  | VarExp (var_name, loc) ->
+     LetExp (let_name, VarExp (var_name, loc), let_body, Ploc.dummy)
+  | LetExp (inner_str, inner_exp, inner_body, loc) ->
+     match is_exp_simple exp with
+     | true ->
+        LetExp (inner_str, inner_exp, LetExp (let_name, inner_body, let_body, Ploc.dummy), loc)
+     | false ->
+        let new_let_body = simplify inner_body let_name let_body in
+        simplify inner_exp inner_str new_let_body                             
+
+let remove_complex exp =
+  let new_name = new_id "tmp" in simplify exp new_name (VarExp (new_name, Ploc.dummy))
+   
 let rec string_of_exp exp =
   match exp with
   | IntExp (num, _) -> string_of_int num
