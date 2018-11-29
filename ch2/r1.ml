@@ -129,13 +129,23 @@ and simplify exp let_name let_body =
   | LetExp (inner_str, inner_exp, inner_body, loc) ->
      match is_exp_simple exp with
      | true ->
-        LetExp (inner_str, inner_exp, LetExp (let_name, inner_body, let_body, Ploc.dummy), loc)
+        (match inner_body with
+         | VarExp (str, _) ->
+            if str = inner_str
+            then LetExp (let_name, inner_exp, let_body, Ploc.dummy)
+            else LetExp (inner_str, inner_exp, let_body, Ploc.dummy)
+         | _ ->
+            LetExp (inner_str, inner_exp, LetExp (let_name, inner_body, let_body, Ploc.dummy), loc))
      | false ->
         let new_let_body = simplify inner_body let_name let_body in
         simplify inner_exp inner_str new_let_body                             
 
 let remove_complex exp =
-  let new_name = new_id "tmp" in simplify exp new_name (VarExp (new_name, Ploc.dummy))
+  if is_exp_simple exp
+  then
+    exp
+  else
+    let new_name = new_id "tmp" in simplify exp new_name (VarExp (new_name, Ploc.dummy))
    
 let rec string_of_exp exp =
   match exp with
