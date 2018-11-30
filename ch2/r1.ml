@@ -71,22 +71,13 @@ let rec uniquify exp env =
 let do_uniquify exp =
   uniquify exp (empty_env ())
 
+(* Remove complex expressions *)
 let int_or_var exp =
   match exp with
   | IntExp _ -> true
   | VarExp _ -> true
-  | ReadExp _ -> true
   | _ -> false 
        
-let rec is_exp_simple exp =
-  match exp with
-  | IntExp _ -> true
-  | ReadExp _ -> true
-  | NegExp (exp, _) -> int_or_var exp
-  | AddExp (exp1, exp2, _) -> (int_or_var exp1) && (int_or_var exp2)
-  | VarExp _ -> true
-  | LetExp (str, exp, body, _) -> is_exp_simple exp && is_exp_simple body
-
 let rec helper_filter exp_ls filtered_ls filter_fn =
   match exp_ls with
   | [] -> (List.rev filtered_ls, [])
@@ -127,26 +118,47 @@ and simplify exp let_name let_body =
   | VarExp (var_name, loc) ->
      LetExp (let_name, VarExp (var_name, loc), let_body, Ploc.dummy)
   | LetExp (inner_str, inner_exp, inner_body, loc) ->
-     match is_exp_simple exp with
-     | true ->
-        (match inner_body with
-         | VarExp (str, _) ->
-            if str = inner_str
-            then LetExp (let_name, inner_exp, let_body, Ploc.dummy)
-            else LetExp (inner_str, inner_exp, let_body, Ploc.dummy)
-         | _ ->
-            LetExp (inner_str, inner_exp, LetExp (let_name, inner_body, let_body, Ploc.dummy), loc))
-     | false ->
-        let new_let_body = simplify inner_body let_name let_body in
-        simplify inner_exp inner_str new_let_body                             
+     let new_let_body = simplify inner_body let_name let_body in
+     simplify inner_exp inner_str new_let_body                             
 
+(* Simplify the expression. Treating the expression as 
+   let str = exp in str *)
 let remove_complex exp =
-  if is_exp_simple exp
-  then
-    exp
-  else
-    let new_name = new_id "tmp" in simplify exp new_name (VarExp (new_name, Ploc.dummy))
-   
+  let new_name = new_id "tmp" in simplify exp new_name (VarExp (new_name, Ploc.dummy))
+
+(* Given an exp, replace the ori variable with tar variable *)
+let rec replace_var_name ori tar exp = 
+  match exp with
+  | IntExp _ -> exp
+  | ReadExp _ -> exp
+  | NegExp (exp, loc) -> NegExp (replace_var_name ori tar exp, loc)
+  | AddExp (exp1, exp2, loc) ->
+     AddExp (replace_var_name ori tar exp1, replace_var_name ori tar exp2, loc)
+  | VarExp (str, loc) ->
+     if str = ori then VarExp (tar, loc) else VarExp (str, loc)
+  | LetExp (str, exp, body, loc) ->
+     let final_str = if str = ori then tar else str in
+     LetExp (final_str, replace_var_name ori tar exp, replace_var_name ori tar body, loc)
+
+(* In the expression, there is an stupid form like this:
+   let [var another_var] body
+   For this expression, we can replace var in the body with another_var, and
+   the resulting body expression becomes equivalent to the original let expression *)
+let rec remove_stupid_let exp =
+  match exp with
+  | IntExp _ -> exp
+  | ReadExp _ -> exp
+  | NegExp (exp, loc) -> NegExp (remove_stupid_let exp, loc)
+  | AddExp (exp1, exp2, loc) ->
+     AddExp (remove_stupid_let exp1, remove_stupid_let exp2, loc)
+  | VarExp _ -> exp
+  | LetExp (str, exp, body, loc) ->
+     match exp with
+     | VarExp (var_name, _) ->
+        remove_stupid_let (replace_var_name str var_name body)
+     | _ ->
+        LetExp (str, remove_stupid_let exp, remove_stupid_let body, loc)
+     
 let rec string_of_exp exp =
   match exp with
   | IntExp (num, _) -> string_of_int num

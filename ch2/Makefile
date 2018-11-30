@@ -1,4 +1,4 @@
-OBJS = r1.cmo  main.cmo
+OBJS = r1.cmo c0.cmo  main.cmo
 
 .PHONY: clean
 prog: $(OBJS)
@@ -7,7 +7,9 @@ prog: $(OBJS)
 
 r1.cmi:
 r1.cmo: r1.cmi
-main.cmo: r1.cmi 
+c0.cmi: r1.cmi
+c0.cmo: c0.cmi r1.cmi
+main.cmo: r1.cmi c0.cmi
 
 
 %.cmi: %.mli
