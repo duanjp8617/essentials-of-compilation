@@ -29,5 +29,7 @@ type program =
 exception R1ToC0Error of string
 
 val r1prog_to_prog : R1.program -> program
-val string_of_program : program -> string                                     
 val uncover_locals : program -> program
+
+val string_of_program : program -> string                                     
+

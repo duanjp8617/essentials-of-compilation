@@ -61,6 +61,22 @@ let r1prog_to_prog prog =
   | R1.AProgram (i, exp) ->
     AProgram (("locals", []), EndLabel ("start", r1_to_tail exp)) 
 
+(* Uncover all the assigned variables and put them in the 
+   info section of the program  *)                     
+let rec uncover_locals_in_tail t accum =
+  match t with
+  | ReturnTail _ -> accum
+  | SeqTail (AssignStmt (arg, exp), t) -> uncover_locals_in_tail t (arg :: accum)
+
+let rec uncover_locals_in_label l accum =
+  match l with
+  | EndLabel (_, t) -> List.rev (uncover_locals_in_tail t accum)
+  | ManyLabel (_, t, l) -> uncover_locals_in_label l (uncover_locals_in_tail t accum)
+                         
+let uncover_locals (AProgram (i, l)) =
+  let locals_ls = uncover_locals_in_label l [] in
+  AProgram (("locals", locals_ls), l)
+
 (* Convert C0.expression to string for print purpose *)
 let string_of_arg arg =
   match arg with
@@ -102,23 +118,7 @@ let string_of_info (str, arg_ls) =
   match res with
   | "" -> "()"
   | _ -> "(" ^ str ^ " ." ^ res ^ ")"
-    
+       
 let string_of_program p =
   match p with
   | AProgram (i, l) -> "(program " ^ string_of_info i ^ "\n(" ^ string_of_label l ^ "))"
-
-(* Uncover all the assigned variables and put them in the 
-   info section of the program  *)                     
-let rec uncover_locals_in_tail t accum =
-  match t with
-  | ReturnTail _ -> accum
-  | SeqTail (AssignStmt (arg, exp), t) -> uncover_locals_in_tail t (arg :: accum)
-
-let rec uncover_locals_in_label l accum =
-  match l with
-  | EndLabel (_, t) -> List.rev (uncover_locals_in_tail t accum)
-  | ManyLabel (_, t, l) -> uncover_locals_in_label l (uncover_locals_in_tail t accum)
-                                        
-let uncover_locals (AProgram (i, l)) =
-  let locals_ls = uncover_locals_in_label l [] in
-  AProgram (("locals", locals_ls), l)
