@@ -24,7 +24,11 @@ let parse_c0_output prog =
    | R1.AProgram (i, exp) ->
       let new_r1_prog =
         R1.AProgram (i, exp |> do_uniquify |> remove_complex |> remove_stupid_let) in
-      new_r1_prog |> r1prog_to_prog |> string_of_program |> print_endline);
+      new_r1_prog |>
+        r1prog_to_prog |>
+        uncover_locals |>
+        string_of_program |>
+        print_endline);
   print_endline "parse succeed";
   ()
 

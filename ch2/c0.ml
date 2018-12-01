@@ -1,7 +1,5 @@
 open R1
 
-type info = R1.info
-
 type argument =
   | IntArg of int
   | VarArg of string
@@ -23,11 +21,14 @@ and label =
   | EndLabel of string * tail
   | ManyLabel of string * tail * label
 
+type info = string * (argument list)
+               
 type program =
   | AProgram of info * label
 
 exception R1ToC0Error of string
 
+(* Convert R1.expression to C0.expression *)
 let r1_to_argument r1_exp =
   match r1_exp with
   | R1.IntExp (num, _) -> IntArg num
@@ -58,8 +59,9 @@ let rec r1_to_tail exp =
 let r1prog_to_prog prog =
   match prog with
   | R1.AProgram (i, exp) ->
-    AProgram (i, EndLabel ("start", r1_to_tail exp)) 
+    AProgram (("locals", []), EndLabel ("start", r1_to_tail exp)) 
 
+(* Convert C0.expression to string for print purpose *)
 let string_of_arg arg =
   match arg with
   | IntArg num -> string_of_int num
@@ -80,15 +82,43 @@ let rec string_of_tail t accum =
   match t with
   | ReturnTail exp -> accum ^ "return " ^ string_of_exp exp
   | SeqTail (stmt, t) -> string_of_tail t (accum ^ (string_of_stmt stmt ^ "\n"))
-
+                       
 let rec string_of_label l =
   match l with
   | EndLabel (str, t) -> "(" ^ str ^ " .\n" ^ string_of_tail t "" ^ ")"
   | ManyLabel (str, t, l) ->
      "(" ^ str ^ " .\n" ^ string_of_tail t "" ^ ")\n" ^ string_of_label l
 
+let string_of_info (str, arg_ls) =
+  let rec go arg_ls accum =
+    match arg_ls with
+    | [] -> accum
+    | hd :: tl ->
+       match hd with
+       | IntArg num -> go tl (accum ^ " " ^ string_of_int num)
+       | VarArg str -> go tl (accum ^ " " ^ str)
+  in
+  let res = go arg_ls "" in
+  match res with
+  | "" -> "()"
+  | _ -> "(" ^ str ^ " ." ^ res ^ ")"
+    
 let string_of_program p =
   match p with
-  | AProgram (i, l) -> "(program ()\n(" ^ string_of_label l ^ "))"
+  | AProgram (i, l) -> "(program " ^ string_of_info i ^ "\n(" ^ string_of_label l ^ "))"
 
-                                                                
+(* Uncover all the assigned variables and put them in the 
+   info section of the program  *)                     
+let rec uncover_locals_in_tail t accum =
+  match t with
+  | ReturnTail _ -> accum
+  | SeqTail (AssignStmt (arg, exp), t) -> uncover_locals_in_tail t (arg :: accum)
+
+let rec uncover_locals_in_label l accum =
+  match l with
+  | EndLabel (_, t) -> List.rev (uncover_locals_in_tail t accum)
+  | ManyLabel (_, t, l) -> uncover_locals_in_label l (uncover_locals_in_tail t accum)
+                                        
+let uncover_locals (AProgram (i, l)) =
+  let locals_ls = uncover_locals_in_label l [] in
+  AProgram (("locals", locals_ls), l)
