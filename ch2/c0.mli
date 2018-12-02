@@ -4,28 +4,26 @@ type argument =
   | IntArg of int
   | VarArg of string
 
-and expression =
+type expression =
   | ArgExp of argument
   | ReadExp
   | NegExp of argument
   | AddExp of argument * argument
 
-and statement =
+type statement =
   | AssignStmt of argument * expression
 
-and tail =
+type tail =
   | ReturnTail of expression
   | SeqTail of statement * tail
 
-and label =
-  | EndLabel of string * tail
-  | ManyLabel of string * tail * label
-
-type info = string * (argument list)
+type label = string             
+             
+type info = label * (argument list)
                
 type program =
-  | AProgram of info * label
-
+  | AProgram of info * ((label * tail) list)
+   
 exception R1ToC0Error of string
 
 val r1prog_to_prog : R1.program -> program

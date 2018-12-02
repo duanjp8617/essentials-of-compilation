@@ -1,5 +1,6 @@
 open R1
 open C0
+open X86_0
 
 let string_of_loc loc =
   let fp = Ploc.first_pos loc in
@@ -27,9 +28,10 @@ let parse_c0_output prog =
       new_r1_prog |>
         r1prog_to_prog |>
         uncover_locals |>
-        string_of_program |>
+        (* string_of_program |> *)
+        (* show_instr_for_c0_prog |> *)
+        print_program |>
         print_endline);
-  print_endline "parse succeed";
   ()
 
 let main () = 
