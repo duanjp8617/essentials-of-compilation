@@ -35,7 +35,7 @@ let string_of_loc loc =
  *   () *)
 
 let type_check_r2_program (AProgram exp) =
-  let res = R2.typecheck exp [] in
+  let res = R2.typecheck (uniquify exp) [] in
   match res with
   | R2.IntT -> print_endline "The expression has type Int."
   | R2.BoolT -> print_endline "The expression has type BoolT."

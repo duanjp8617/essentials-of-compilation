@@ -132,9 +132,36 @@ let rec typecheck exp type_env =
       | _ -> raise (TypeError ("The IfExp expects a BoolT in condition.", loc)))
          
        
-   
-  
+(* Generate unique IDs  *)
+let unique_id = ref 0
 
+let gen_id var =
+  unique_id := (!unique_id + 1);
+  var ^ "." ^ (string_of_int !unique_id)
+
+(* uniquify  *)
+let rec do_uniquify exp env =
+  match exp with
+  | IntExp (num, loc) -> IntExp(num, loc)
+  | ReadExp loc -> ReadExp loc
+  | NegExp (exp, loc) -> NegExp ((do_uniquify exp env), loc)
+  | AddExp (exp1, exp2, loc) -> AddExp ((do_uniquify exp1 env), (do_uniquify exp2 env), loc)
+  | VarExp (str, loc) -> VarExp ((apply_env str env), loc)
+  | LetExp (str, exp1, body, loc) ->
+     let new_str = gen_id str in
+     LetExp (new_str, (do_uniquify exp1 env), (do_uniquify body (extend_env str new_str env)), loc)
+  | TrueExp loc -> TrueExp loc
+  | FalseExp loc -> FalseExp loc
+  | AndExp (exp1, exp2, loc) -> AndExp ((do_uniquify exp1 env), (do_uniquify exp2 env), loc)
+  | NotExp (exp, loc) -> NotExp ((do_uniquify exp env), loc)
+  | CmpExp (cmp, exp1, exp2, loc) ->
+     CmpExp (cmp, (do_uniquify exp1 env), (do_uniquify exp2 env), loc)
+  | IfExp (exp1, exp2, exp3, loc) ->
+     IfExp ((do_uniquify exp1 env), (do_uniquify exp2 env), (do_uniquify exp3 env), loc)
+
+let uniquify exp =
+  do_uniquify exp []
+       
 (* (\*Helper functions for uniquify operation *\)
  * exception R1VarMissInEnv of string
  * 
