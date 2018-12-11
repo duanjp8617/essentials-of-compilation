@@ -1,4 +1,5 @@
 open R2
+open C1
 (* open C0
  * open X86_0 *)
 
@@ -34,15 +35,16 @@ let string_of_loc loc =
  *         print_endline);
  *   () *)
 
-let type_check_r2_program (AProgram exp) =
-  let res = R2.typecheck (uniquify exp) [] in
-  match res with
-  | R2.IntT -> print_endline "The expression has type Int."
-  | R2.BoolT -> print_endline "The expression has type BoolT."
+let type_check_r2_program (R2.AProgram exp) =
+  (let res = R2.typecheck (uniquify exp) [] in
+   match res with
+   | R2.IntT -> print_endline "The expression has type Int."
+   | R2.BoolT -> print_endline "The expression has type BoolT.");
+  exp
   
   
 let main () = 
-  try Stream.of_channel (open_in Sys.argv.(1)) |> parse |> type_check_r2_program
+  try Stream.of_channel (open_in Sys.argv.(1)) |> parse |> type_check_r2_program |> uniquify |> C1.do_flatten |> C1.string_of_stmt_list |> print_endline
   with 
   | Ploc.Exc (loc, Stream.Error msg) ->
      print_endline (string_of_loc loc ^ ": [bad syntax] " ^ msg); exit 1
