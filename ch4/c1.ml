@@ -24,20 +24,91 @@ type program =
   | AProgram of (string list) * R2.r2_type * (stmt list)
               
 (* Flatten an R2 expression  *)
+let is_exp_simple exp =
+  match exp with
+  | R2.IntExp _ -> true
+  | R2.VarExp _ -> true
+  | R2.TrueExp _ -> true
+  | R2.FalseExp _ -> true
+  | _ -> false
 
-let rec flatten exp bind_name cont =
+exception TmpException
+
+let simple_exp_to_arg exp =
+  match exp with
+  | R2.IntExp (num, _) -> IntArg num
+  | R2.VarExp (str, _) -> VarArg str
+  | R2.TrueExp _ -> BoolArg true
+  | R2.FalseExp _ -> BoolArg false
+  | _ -> raise TmpException
+
+let replace_var_in_arg arg ori_name tar_name =
+  match arg with
+  | IntArg _ -> arg
+  | VarArg str ->
+     if str = ori_name
+     then VarArg tar_name else arg
+  | BoolArg _ -> arg
+       
+let rec replace_var_in_stmt stmt ori_name tar_name =
+  match stmt with
+  | AssignStmt (str, exp) ->
+     let res_exp = (match exp with
+                    | ArgExp arg -> ArgExp (replace_var_in_arg arg ori_name tar_name)
+                    | ReadExp -> ReadExp
+                    | NegExp arg -> NegExp (replace_var_in_arg arg ori_name tar_name)
+                    | AddExp (arg1, arg2) ->
+                       AddExp ((replace_var_in_arg arg1 ori_name tar_name),
+                               (replace_var_in_arg arg2 ori_name tar_name))
+                    | NotExp arg -> NotExp (replace_var_in_arg arg ori_name tar_name)
+                    | CmpExp (cmp, arg1, arg2) -> 
+                       CmpExp (cmp,
+                               (replace_var_in_arg arg1 ori_name tar_name),
+                               (replace_var_in_arg arg2 ori_name tar_name))) in
+     AssignStmt (str, res_exp)
+  | ReturnStmt arg -> ReturnStmt (replace_var_in_arg arg ori_name tar_name)
+  | IfStmt (cmp, arg1, arg2, ls1, ls2) ->
+     IfStmt (cmp,
+             replace_var_in_arg arg1 ori_name tar_name,
+             replace_var_in_arg arg2 ori_name tar_name,
+             replace_var_in_stmt_ls ls1 ori_name tar_name,
+             replace_var_in_stmt_ls ls2 ori_name tar_name)
+                   
+and replace_var_in_stmt_ls stmt_ls ori_name tar_name =
+       List.map (fun stmt -> replace_var_in_stmt stmt ori_name tar_name) stmt_ls
+       
+let rec helper_filter exp_ls filtered_ls filter_fn =
+  match exp_ls with
+  | [] -> (List.rev filtered_ls, [])
+  | hd :: tl ->
+     match filter_fn hd with
+     | true -> helper_filter tl (hd :: filtered_ls) filter_fn
+     | false -> (List.rev filtered_ls, hd :: tl)
+              
+let rec simple_exp_from_ls exp_ls builder =
+  let (all_simples, hd_not_simple) = helper_filter exp_ls [] is_exp_simple in
+  match hd_not_simple with
+  | [] -> builder all_simples
+  | hd :: tl ->
+     let new_name = gen_id "tmp" in
+     let new_exp_ls = all_simples @ (R2.VarExp (new_name, Ploc.dummy) :: tl) in 
+     flatten hd new_name (simple_exp_from_ls new_exp_ls builder)  
+
+and flatten exp bind_name cont =
   match exp with
   | R2.IntExp (num, _) -> AssignStmt (bind_name, ArgExp (IntArg num)) :: cont
   | R2.ReadExp _ -> AssignStmt (bind_name, ReadExp) :: cont
   | R2.NegExp (exp, _) ->
-     flatten exp bind_name (AssignStmt (bind_name, NegExp (VarArg bind_name)) :: cont)
+     if is_exp_simple exp
+     then AssignStmt (bind_name, NegExp (simple_exp_to_arg exp)) :: cont
+     else flatten exp bind_name (AssignStmt (bind_name, NegExp (VarArg bind_name)) :: cont) 
   | R2.AddExp (exp1, exp2, _) ->
-     let exp1_id = R2.gen_id "tmp" in
-     let exp2_id = R2.gen_id "tmp" in
-     let exp2_cont = AssignStmt (bind_name, AddExp (VarArg exp1_id, VarArg exp2_id)) :: cont in
-     let exp1_cont = flatten exp2 exp2_id exp2_cont in
-     flatten exp1 exp1_id exp1_cont
-  | R2.VarExp (str, _) -> AssignStmt (bind_name, ArgExp (VarArg str)) :: cont
+     simple_exp_from_ls [exp1; exp2]
+       (fun ls ->
+         AssignStmt (bind_name,
+                     AddExp (simple_exp_to_arg (List.nth ls 0),
+                             simple_exp_to_arg (List.nth ls 1))) :: cont)
+  | R2.VarExp (str, _) -> replace_var_in_stmt_ls cont bind_name str
   | R2.LetExp (str, exp, body, _) ->
      flatten exp str (flatten body bind_name cont)
   | R2.TrueExp _ -> AssignStmt (bind_name, ArgExp (BoolArg true)) :: cont
@@ -47,27 +118,52 @@ let rec flatten exp bind_name cont =
      let outer = R2.IfExp (exp1, inner, FalseExp Ploc.dummy, Ploc.dummy) in
      flatten outer bind_name cont
   | R2.NotExp (exp, _) ->
-     let exp_id = R2.gen_id "tmp" in
-     flatten exp exp_id (AssignStmt (bind_name, NotExp (VarArg exp_id)) :: cont)
+     simple_exp_from_ls [exp]
+       (fun ls ->
+         AssignStmt (bind_name, NotExp (simple_exp_to_arg (List.hd ls))) :: cont)
   | R2.CmpExp (cmp, exp1, exp2, _) ->
-     let exp1_id = R2.gen_id "tmp" in
-     let exp2_id = R2.gen_id "tmp" in
-     let exp2_cont =
-       AssignStmt (bind_name, CmpExp (cmp, VarArg exp1_id, VarArg exp2_id)) :: cont in
-     let exp1_cont = flatten exp2 exp2_id exp2_cont in
-     flatten exp1 exp1_id exp1_cont
-  | R2.IfExp (exp1, exp2, exp3, _) ->
-     let exp1_id = R2.gen_id "tmp" in
-     let exp2_flatten = flatten exp2 bind_name [] in
-     let exp3_flatten = flatten exp3 bind_name [] in
-     let exp1_cont =
-       IfStmt (R2.EQ, VarArg exp1_id, BoolArg true, exp2_flatten, exp3_flatten) :: cont in
-     flatten exp1 exp1_id exp1_cont
+     simple_exp_from_ls [exp1; exp2]
+       (fun ls ->
+         AssignStmt (bind_name,
+                     CmpExp (cmp,
+                             simple_exp_to_arg (List.nth ls 0),
+                             simple_exp_to_arg (List.nth ls 1))) :: cont)
+  | R2.IfExp (exp1, exp2, exp3, _) -> 
+     match exp1 with
+     | R2.CmpExp (cmp, lhs, rhs, _) ->
+        let exp2_flatten = flatten exp2 bind_name [] in
+        let exp3_flatten = flatten exp3 bind_name [] in
+        simple_exp_from_ls [lhs; rhs]
+          (fun ls ->
+            IfStmt (cmp,
+                    simple_exp_to_arg (List.nth ls 0),
+                    simple_exp_to_arg (List.nth ls 1),
+                    exp2_flatten,
+                    exp3_flatten) :: cont)
+     | R2.TrueExp _ ->
+        flatten exp2 bind_name cont
+     | R2.FalseExp _ ->
+        flatten exp3 bind_name cont
+     | R2.LetExp (str, bind_exp, body, loc) ->
+        flatten bind_exp str
+          (flatten (R2.IfExp (body, exp2, exp3, loc)) bind_name cont)
+     | R2.NotExp (exp, loc) ->
+        flatten (R2.IfExp (exp, exp3, exp2, loc)) bind_name cont
+     | _ -> 
+        let exp2_flatten = flatten exp2 bind_name [] in
+        let exp3_flatten = flatten exp3 bind_name [] in
+        simple_exp_from_ls [exp1]
+          (fun ls ->
+            IfStmt (R2.EQ,
+                    simple_exp_to_arg (List.hd ls),
+                    BoolArg true,
+                    exp2_flatten,
+                    exp3_flatten) :: cont)
                                                                                      
 let do_flatten exp =
   let exp_id = gen_id "tmp" in
-  flatten exp exp_id [ReturnStmt (VarArg exp_id)]
-
+  flatten exp exp_id [ReturnStmt (VarArg exp_id)]  
+  
 (* Convert statment list to string *)
 let string_of_arg arg =
   match arg with
@@ -119,7 +215,7 @@ let string_of_stmt_list stmt_ls =
             (accum ^
                "(if (" ^ (string_of_cmp cmp) ^ " " ^ (string_of_arg arg1) ^ " " ^ (string_of_arg arg2) ^ ")\n" ^
                  "(" ^ then_part ^ ")\n" ^
-                   "(" ^ else_part ^ ")" ^ ending)
+                   "(" ^ else_part ^ "))" ^ ending)
   in
   recur stmt_ls ""
               
