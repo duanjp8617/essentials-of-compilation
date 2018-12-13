@@ -25,4 +25,8 @@ type program =
    
 val do_flatten : R2.expression -> (stmt list)
 
-val string_of_stmt_list : (stmt list) -> string                                    
+val uncover_locals : (stmt list) -> (string list)
+  
+val string_of_stmt_list : (stmt list) -> string
+
+val string_of_arg_list : (string list) -> string                                           

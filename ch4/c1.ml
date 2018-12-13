@@ -163,6 +163,23 @@ and flatten exp bind_name cont =
 let do_flatten exp =
   let exp_id = gen_id "tmp" in
   flatten exp exp_id [ReturnStmt (VarArg exp_id)]  
+
+(* Uncover locals *)
+let uncover_locals stmt_ls =
+  let rec recur stmt_ls accum =
+    match stmt_ls with
+    | [] -> List.rev accum
+    | hd :: tl ->
+       match hd with
+       | AssignStmt (str, _) ->
+          if List.exists (fun elem -> elem = str) accum
+          then recur tl accum
+          else recur tl (str :: accum)
+       | ReturnStmt _ -> recur tl accum
+       | IfStmt (_,_,_, ls1, ls2) ->
+          recur (ls1 @ ls2 @ tl) accum in
+  recur stmt_ls []
+  
   
 (* Convert statment list to string *)
 let string_of_arg arg =
@@ -219,4 +236,6 @@ let string_of_stmt_list stmt_ls =
   in
   recur stmt_ls ""
               
-    
+        (* Convert argument lists to string *)
+let string_of_arg_list str_ls =
+  (List.fold_left (fun accum elem -> accum  ^ elem ^ " ") "" str_ls)

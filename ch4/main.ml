@@ -41,10 +41,19 @@ let type_check_r2_program (R2.AProgram exp) =
    | R2.IntT -> print_endline "The expression has type Int."
    | R2.BoolT -> print_endline "The expression has type BoolT.");
   exp
+
+let compile (R2.AProgram exp) =
+  let t = typecheck exp [] in
+  exp
+  |> uniquify               (* Uniquify *)
+  |> C1.do_flatten
   
   
 let main () = 
-  try Stream.of_channel (open_in Sys.argv.(1)) |> parse |> type_check_r2_program |> uniquify |> C1.do_flatten |> C1.string_of_stmt_list |> print_endline
+  try Stream.of_channel (open_in Sys.argv.(1)) |> parse |> type_check_r2_program |> uniquify |> C1.do_flatten |> (fun stmt_ls ->
+    let str_ls = uncover_locals stmt_ls in
+    print_endline (string_of_arg_list str_ls);
+    print_endline (string_of_stmt_list stmt_ls))
   with 
   | Ploc.Exc (loc, Stream.Error msg) ->
      print_endline (string_of_loc loc ^ ": [bad syntax] " ^ msg); exit 1
